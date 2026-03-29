@@ -1,6 +1,5 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-import os
 
 app = FastAPI()
 
@@ -13,11 +12,7 @@ app.add_middleware(
 
 @app.get("/")
 def root():
-    return {"status": "ok", "database": "checking"}
-
-@app.get("/health")
-def health():
-    return {"status": "healthy"}
+    return {"status": "ok", "message": "Server is running"}
 
 @app.get("/bookings_by_date")
 def bookings_by_date(date: str):
@@ -29,4 +24,4 @@ def busy_times(date: str, table: str):
 
 @app.post("/booking")
 def create_booking(data: dict):
-    return {"ok": True, "id": 1, "message": "Test booking"}
+    return {"ok": True, "id": 1}
