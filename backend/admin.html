@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>Dubrovka PRO Admin</title>
+
+<style>
+body{
+margin:0;
+font-family:Arial;
+background:#0b0b0b;
+color:#fff;
+}
+
+.container{display:flex;height:100vh;}
+
+/* sidebar */
+.sidebar{
+width:230px;
+background:#111;
+padding:20px;
+}
+
+.logo{
+color:#ff2a2a;
+font-size:20px;
+margin-bottom:20px;
+}
+
+.menu div{
+padding:10px;
+margin-bottom:8px;
+border-radius:8px;
+cursor:pointer;
+}
+
+.menu div:hover{background:#1a1a1a;}
+.active{background:#ff2a2a;}
+
+/* content */
+.content{
+flex:1;
+padding:20px;
+overflow:auto;
+}
+
+.header{
+display:flex;
+gap:10px;
+flex-wrap:wrap;
+margin-bottom:15px;
+}
+
+input, select{
+padding:10px;
+border-radius:8px;
+border:none;
+background:#111;
+color:#fff;
+}
+
+button{
+padding:10px 16px;
+border-radius:8px;
+border:none;
+background:#ff2a2a;
+color:#fff;
+cursor:pointer;
+}
+
+button:hover{
+background:#ff4444;
+}
+
+/* grid */
+.grid{
+display:grid;
+grid-template-columns:repeat(auto-fill,minmax(280px,1fr));
+gap:12px;
+}
+
+/* card */
+.card{
+background:#151515;
+padding:15px;
+border-radius:12px;
+border:1px solid #222;
+transition:0.3s;
+}
+
+.card.new{
+border:1px solid #ff2a2a;
+box-shadow:0 0 10px #ff2a2a55;
+}
+
+.time{
+font-size:22px;
+color:#ff2a2a;
+}
+
+.name{font-size:18px;}
+.phone{color:#ccc;margin-bottom:8px;}
+
+.status{
+font-size:12px;
+padding:3px 6px;
+border-radius:6px;
+display:inline-block;
+margin-bottom:6px;
+}
+
+.active{background:#ff2a2a;color:#fff;}
+.completed{background:#0a7d3b;color:#fff;}
+.cancelled{background:#666;color:#fff;}
+
+button.done-btn{
+padding:8px 12px;
+border:none;
+border-radius:8px;
+background:#ff2a2a;
+color:#fff;
+cursor:pointer;
+margin-top:10px;
+width:100%;
+}
+
+button.done-btn:hover{
+background:#ff4444;
+}
+
+.date-title{
+margin:20px 0 10px;
+font-size:18px;
+color:#ff2a2a;
+}
+
+.error-message{
+background:#2a1a1a;
+padding:20px;
+border-radius:12px;
+color:#ff6a6a;
+text-align:center;
+margin:20px;
+border:1px solid #ff2a2a;
+}
+
+.loading{
+text-align:center;
+padding:40px;
+color:#888;
+}
+</style>
+</head>
+
+<body>
+
+<audio id="notifySound">
+<source src="https://actions.google.com/sounds/v1/alarms/beep_short.ogg">
+</audio>
+
+<div class="container">
+
+<div class="sidebar">
+<div class="logo">🍷 Dubrovka PRO</div>
+
+<div class="menu">
+<div class="active" onclick="showToday(this)">📅 Сегодня</div>
+<div onclick="showCalendar(this)">🗓 Календарь</div>
+</div>
+</div>
+
+<div class="content">
+
+<div class="header">
+<input type="text" id="search" placeholder="🔍 Поиск (имя / телефон)">
+<select id="tableFilter">
+<option value="">Все столы</option>
+<option>1</option><option>2</option><option>3</option>
+<option>4</option><option>5</option><option>6</option>
+<option>VIP</option>
+</select>
+<input type="date" id="dateInput" style="display:none;">
+<button onclick="refresh()">🔄 Обновить</button>
+</div>
+
+<div id="list"></div>
+
+</div>
+
+</div>
+
+<script>
+const API = "https://dubrovka-webapp-production-a00c.up.railway.app";
+const list = document.getElementById("list");
+
+let currentData = [];
+let previousIds = new Set();
+let currentMode = "today";
+
+function getLocalDate(){
+let now=new Date();
+let tz=now.getTimezoneOffset()*60000;
+return new Date(now-tz).toISOString().split("T")[0];
+}
+
+async function load(date){
+if(!date) return;
+try {
+console.log(`🔄 Загрузка броней на ${date}...`);
+let res = await fetch(`${API}/bookings_by_date?date=${date}`);
+if(!res.ok) throw new Error(`HTTP ${res.status}`);
+let data = await res.json();
+console.log(`✅ Загружено броней: ${data.length}`);
+handleNew(data);
+currentData = data;
+render();
+} catch(e) {
+console.error("❌ Ошибка:", e);
+list.innerHTML = `<div class="error-message">
+❌ Ошибка загрузки данных<br>
+<small>${e.message}</small><br><br>
+<button onclick="refresh()">Повторить</button>
+</div>`;
+}
+}
+
+function handleNew(data){
+let newIds = data.map(b=>b.id);
+let hasNew = false;
+newIds.forEach(id=>{
+if(!previousIds.has(id)){
+hasNew = true;
+console.log("🔔 Новая бронь:", id);
+}
+});
+if(hasNew){
+let sound = document.getElementById("notifySound");
+if(sound) sound.play().catch(e=>console.log("Звук не воспроизведен"));
+}
+previousIds = new Set(newIds);
+}
+
+function applyFilters(data){
+let search = document.getElementById("search").value.toLowerCase();
+let table = document.getElementById("tableFilter").value;
+return data.filter(b=>{
+let matchSearch = b.name.toLowerCase().includes(search) || b.phone.includes(search);
+let matchTable = !table || b.table == table;
+return matchSearch && matchTable;
+});
+}
+
+function render(){
+let data = applyFilters(currentData);
+if(data.length === 0){
+list.innerHTML = "<div style='text-align:center;padding:40px;color:#666;'>📭 Нет броней</div>";
+return;
+}
+data.sort((a,b)=> new Date(`${a.date}T${a.time}`) - new Date(`${b.date}T${b.time}`));
+let grouped = {};
+data.forEach(b=>{
+if(!grouped[b.date]) grouped[b.date]=[];
+grouped[b.date].push(b);
+});
+let html="";
+for(let date in grouped){
+html += `<div class="date-title">📅 ${date}</div><div class="grid">`;
+grouped[date].forEach(b=>{
+let isNew = !previousIds.has(b.id);
+let statusText = b.status === "active" ? "✅ Активна" : 
+                 b.status === "completed" ? "✔ Завершена" : 
+                 b.status === "cancelled" ? "❌ Отменена" : b.status;
+html += `
+<div class="card ${isNew ? 'new':''}">
+<div class="status ${b.status}">${statusText}</div>
+<div class="time">⏰ ${b.time}</div>
+<div class="name">👤 ${b.name}</div>
+<div class="phone">📞 ${b.phone}</div>
+<div>🪑 Стол ${b.table} | 👥 ${b.guests} чел.</div>
+`;
+if(b.status === "active"){
+html += `<button class="done-btn" onclick="done(${b.id})">✅ Гость ушёл</button>`;
+}
+html += `</div>`;
+});
+html += `</div>`;
+}
+list.innerHTML = html;
+}
+
+async function done(id){
+if(!confirm("Отметить что гость ушел?")) return;
+try {
+let res = await fetch(`${API}/done/${id}`,{method:"POST"});
+if(res.ok){
+currentData = currentData.map(b=> b.id===id ? {...b,status:"completed"} : b);
+render();
+console.log(`✅ Бронь ${id} завершена`);
+} else {
+throw new Error(`HTTP ${res.status}`);
+}
+} catch(e) {
+console.error("❌ Ошибка:", e);
+alert("Ошибка: " + e.message);
+}
+}
+
+function refresh(){
+let date = currentMode === "today" ? getLocalDate() : dateInput.value;
+if(date) {
+list.innerHTML = '<div class="loading">🔄 Загрузка...</div>';
+load(date);
+}
+}
+
+function showToday(el){
+currentMode = "today";
+setActive(el);
+document.getElementById("dateInput").style.display="none";
+load(getLocalDate());
+}
+
+function showCalendar(el){
+currentMode = "calendar";
+setActive(el);
+document.getElementById("dateInput").style.display="block";
+let date = document.getElementById("dateInput").value || getLocalDate();
+load(date);
+}
+
+function setActive(el){
+document.querySelectorAll(".menu div").forEach(e=>e.classList.remove("active"));
+el.classList.add("active");
+}
+
+document.getElementById("dateInput").onchange=()=>{
+if(currentMode === "calendar") load(dateInput.value);
+};
+document.getElementById("search").oninput=render;
+document.getElementById("tableFilter").onchange=render;
+
+setInterval(()=>{
+let date = currentMode === "today" ? getLocalDate() : document.getElementById("dateInput").value;
+if(date) load(date);
+},10000);
+
+console.log("🚀 Админ панель запущена");
+load(getLocalDate());
+</script>
+
+</body>
+</html>
